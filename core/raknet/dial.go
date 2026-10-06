@@ -311,6 +311,9 @@ type connState struct {
 	// discoveringMTUSize is the current MTU size 'discovered'. This MTU size decreases the more the open
 	// connection request 1 is sent, so that the max packet size can be discovered.
 	discoveringMTUSize uint16
+
+	// cookie 是 cloudburst/Geyser 在 Secure 模式下 Reply1 附带的 4 字节安全 Cookie。
+	cookie []byte
 }
 
 // openConnectionRequest sends open connection request 2 packets continuously until it receives an open
@@ -431,6 +434,11 @@ func (state *connState) discoverMTUSize(ctx context.Context) (e error) {
 			if err := response.Read(buffer); err != nil {
 				return fmt.Errorf("error reading open connection reply 1: %v", err)
 			}
+			if response.Secure {
+				// cloudburst/Geyser 的 Reply1 在 Secure=true 时附带 4 字节安全 Cookie，
+				// 需在 Request2 中回传，否则服务器不响应。
+				state.cookie = response.Cookie
+			}
 			if response.ServerPreferredMTUSize < 400 || response.ServerPreferredMTUSize > 1500 {
 				// This is an awful hack we cooked up to deal with OVH 'DDoS' protection. For some reason they
 				// send a broken MTU size first. Sending a Request2 followed by a Request1 deals with this.
@@ -454,7 +462,7 @@ func (state *connState) discoverMTUSize(ctx context.Context) (e error) {
 // error is returned.
 func (state *connState) sendOpenConnectionRequest2(mtu uint16) error {
 	b := bytes.NewBuffer(nil)
-	(&message.OpenConnectionRequest2{ServerAddress: *state.remoteAddr.(*net.UDPAddr), ClientPreferredMTUSize: mtu, ClientGUID: state.id}).Write(b)
+	(&message.OpenConnectionRequest2{ServerAddress: *state.remoteAddr.(*net.UDPAddr), ClientPreferredMTUSize: mtu, ClientGUID: state.id, Cookie: state.cookie}).Write(b)
 	_, err := state.conn.Write(b.Bytes())
 	return err
 }

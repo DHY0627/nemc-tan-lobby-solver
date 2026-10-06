@@ -11,12 +11,17 @@ type OpenConnectionRequest2 struct {
 	ServerAddress          net.UDPAddr
 	ClientPreferredMTUSize uint16
 	ClientGUID             int64
+	// Cookie 是 cloudburst/Geyser 在 Secure 模式下的安全 Cookie（可选，从 Reply1 获得）。
+	Cookie []byte
 }
 
 func (pk *OpenConnectionRequest2) Write(buf *bytes.Buffer) {
 	_ = binary.Write(buf, binary.BigEndian, IDOpenConnectionRequest2)
 	_ = binary.Write(buf, binary.BigEndian, unconnectedMessageSequence)
 	writeAddr(buf, pk.ServerAddress)
+	if len(pk.Cookie) > 0 {
+		buf.Write(pk.Cookie)
+	}
 	_ = binary.Write(buf, binary.BigEndian, pk.ClientPreferredMTUSize)
 	_ = binary.Write(buf, binary.BigEndian, pk.ClientGUID)
 }

@@ -9,6 +9,7 @@ func NewClientPool() Pool {
 	return map[uint16]Packet{
 		IDTanLoginRequest:      &TanLoginRequest{},
 		IDTanCreateRoomRequest: &TanCreateRoomRequest{},
+		IDTanStartGameRequest:  &TanStartGameRequest{},
 		IDTanEnterRoomRequest:  &TanEnterRoomRequest{},
 		IDTanLeaveRoomRequest:  &TanLeaveRoomRequest{},
 		IDTanKickOutRequest:    &TanKickOutRequest{},
@@ -22,6 +23,7 @@ func NewServerPool() Pool {
 		IDTanLoginResponse:      &TanLoginResponse{},
 		IDTanCreateRoomResponse: &TanCreateRoomResponse{},
 		IDTanEnterRoomResponse:  &TanEnterRoomResponse{},
+		IDTanNewGuestResponse:   &TanNewGuestResponse{},
 		IDTanLeaveRoomResponse:  &TanLeaveRoomResponse{},
 		IDTanKickOutResponse:    &TanKickOutResponse{},
 		IDTanNotifyServerReady:  &TanNotifyServerReady{},

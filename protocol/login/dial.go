@@ -207,6 +207,12 @@ func (d *Dialer) enterTanLobbyRoom(
 			_ = conn.Close()
 			continue
 		}
+		if ready, ok := pk.(*packet.TanNotifyServerReady); ok {
+			fmt.Printf("[join-debug] TanNotifyServerReady{ServerAddress=%q ServerRaknetGuid=%q RTCRoomID=%q NetherNetID=%q WebRTCCompressEnabled=%v}\n",
+				ready.ServerAddress, ready.ServerRaknetGuid, ready.RTCRoomID, ready.NetherNetID, ready.WebRTCCompressEnabled)
+		} else if kicked, ok := pk.(*packet.TanKickOutResponse); ok {
+			fmt.Printf("[join-debug] TanKickOutResponse{%+v}\n", kicked)
+		}
 		switch pk.(type) {
 		case *packet.TanNotifyServerReady, *packet.TanKickOutResponse:
 			_ = conn.Close()

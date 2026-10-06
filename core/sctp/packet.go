@@ -11,7 +11,10 @@ import (
 )
 
 // Create the crc32 table we'll use for the checksum
-var ieeeTable = crc32.MakeTable(crc32.IEEE) // nolint:gochecknoglobals
+// SCTP 标准（RFC 4960）规定使用 CRC32C（Castagnoli）校验和。
+// 之前误用 crc32.IEEE，导致与真实网易客户端（正确实现 CRC32C）互操作失败：
+// 我们发的包玩家校验失败丢弃，玩家回的包我们校验失败丢弃（checksum mismatch）。
+var ieeeTable = crc32.MakeTable(crc32.Castagnoli) // nolint:gochecknoglobals
 
 // Allocate and zero this data once.
 // We need to use it for the checksum and don't want to allocate/clear each time.
@@ -82,7 +85,7 @@ func (p *packet) unmarshal(doChecksum bool, raw []byte) error { //nolint:cyclop
 		default:
 		}
 	}
-	theirChecksum := binary.BigEndian.Uint32(raw[8:])
+	theirChecksum := binary.LittleEndian.Uint32(raw[8:])
 	if theirChecksum != 0 || doChecksum {
 		ourChecksum := generatePacketChecksum(raw)
 		if theirChecksum != ourChecksum {
@@ -178,7 +181,7 @@ func (p *packet) marshal(doChecksum bool) ([]byte, error) {
 		//
 		// Use LittleEndian.PutUint32 to avoid flipping the bytes in to
 		// the spec compliant checksum order
-		binary.BigEndian.PutUint32(raw[8:], generatePacketChecksum(raw))
+		binary.LittleEndian.PutUint32(raw[8:], generatePacketChecksum(raw))
 	}
 
 	return raw, nil

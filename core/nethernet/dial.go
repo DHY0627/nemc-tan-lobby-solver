@@ -251,6 +251,7 @@ func (d Dialer) startTransports(ctx context.Context, conn *Conn, desc *descripti
 	}); err != nil {
 		return fmt.Errorf("create ReliableDataChannel: %w", err)
 	}
+	conn.bindChannelHandlers(conn.reliable)
 	if err := withContext(ctx, func() error {
 		var (
 			err            error
@@ -264,6 +265,7 @@ func (d Dialer) startTransports(ctx context.Context, conn *Conn, desc *descripti
 	}); err != nil {
 		return fmt.Errorf("create UnreliableDataChannel: %w", err)
 	}
+	conn.bindChannelHandlers(conn.unreliable)
 	return nil
 }
 

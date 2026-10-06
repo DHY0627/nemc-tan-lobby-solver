@@ -56,8 +56,22 @@ type Conn struct {
 
 	packets chan []byte
 
+	// unreliablePackets receives messages from the 'UnreliableDataChannel' (NetEase 客户端可能使用它发送数据)。
+	unreliablePackets chan []byte
+	// unreliableMessage includes a buffer of previously-received segments for the unreliable channel.
+	unreliableMessage *message
+
 	// message includes a buffer of previously-received segments and the count of the last segment.
 	message *message
+
+	// handlersMu guards boundChannels. The underlying WebRTC implementation starts
+	// reading a data channel as soon as it is opened and silently drops every message
+	// that arrives while no message handler is registered. A NetEase client sends its
+	// first Bedrock packet (RequestNetworkSettings) in the same instant as the channel
+	// open handshake, so handlers must be bound at that instant rather than after all
+	// channels of the Conn have been negotiated.
+	handlersMu    sync.Mutex
+	boundChannels map[*webrtc.DataChannel]struct{}
 
 	once   sync.Once     // Ensures closure occur only once
 	closed chan struct{} // Notifies that a Conn has been closed.
@@ -87,6 +101,16 @@ func (c *Conn) ReadPacket() ([]byte, error) {
 	case <-c.closed:
 		return nil, net.ErrClosed
 	case pk := <-c.packets:
+		return pk, nil
+	}
+}
+
+// ReadUnreliablePacket receives a message from the 'UnreliableDataChannel' and returns the bytes.
+func (c *Conn) ReadUnreliablePacket() ([]byte, error) {
+	select {
+	case <-c.closed:
+		return nil, net.ErrClosed
+	case pk := <-c.unreliablePackets:
 		return pk, nil
 	}
 }
@@ -211,23 +235,57 @@ func (c *Conn) Close() (err error) {
 	return err
 }
 
-// handleTransports handles incoming messages from the 'ReliableDataChannel' and ensures
+// bindChannelHandlers registers the message and closure handlers of a single data channel.
+// It is safe (and expected) to call it more than once per channel: only the first call has
+// an effect. Both [Listener] and [Dialer] call it the moment a channel is opened, which is
+// required to not lose the first message the remote sends right after the DCEP handshake.
+func (c *Conn) bindChannelHandlers(channel *webrtc.DataChannel) {
+	if channel == nil {
+		return
+	}
+
+	c.handlersMu.Lock()
+	if c.boundChannels == nil {
+		c.boundChannels = make(map[*webrtc.DataChannel]struct{})
+	}
+	if _, ok := c.boundChannels[channel]; ok {
+		c.handlersMu.Unlock()
+
+		return
+	}
+	c.boundChannels[channel] = struct{}{}
+	c.handlersMu.Unlock()
+
+	switch channel.Label() {
+	case "ReliableDataChannel":
+		channel.OnMessage(func(msg webrtc.DataChannelMessage) {
+			c.log.Info("ReliableDataChannel raw message", slog.String("hex", fmt.Sprintf("%x", msg.Data)))
+			if err := c.handleMessage(msg.Data); err != nil {
+				c.log.Error("error handling remote message", slog.Any("error", err))
+			}
+		})
+	case "UnreliableDataChannel":
+		channel.OnMessage(func(msg webrtc.DataChannelMessage) {
+			c.log.Info("UnreliableDataChannel raw message", slog.String("hex", fmt.Sprintf("%x", msg.Data)))
+			if err := c.handleUnreliableMessage(msg.Data); err != nil {
+				c.log.Error("error handling unreliable remote message", slog.Any("error", err))
+			}
+		})
+	default:
+		return
+	}
+
+	channel.OnClose(func() {
+		_ = c.Close()
+	})
+}
+
+// handleTransports ensures that the handlers of the two data channels are bound, and ensures
 // closure of its two data channels, as well as ICE, DTLS, and SCTP transports when any of
 // them are closed by the remote connection.
 func (c *Conn) handleTransports() {
-	c.reliable.OnMessage(func(msg webrtc.DataChannelMessage) {
-		if err := c.handleMessage(msg.Data); err != nil {
-			c.log.Error("error handling remote message", slog.Any("error", err))
-		}
-	})
-
-	c.reliable.OnClose(func() {
-		_ = c.Close()
-	})
-
-	c.unreliable.OnClose(func() {
-		_ = c.Close()
-	})
+	c.bindChannelHandlers(c.reliable)
+	c.bindChannelHandlers(c.unreliable)
 
 	c.ice.OnConnectionStateChange(func(state webrtc.ICETransportState) {
 		switch state {
@@ -478,6 +536,8 @@ func newConn(ice *webrtc.ICETransport, dtls *webrtc.DTLSTransport, sctp *webrtc.
 		negotiator: n,
 
 		packets: make(chan []byte),
+
+		unreliablePackets: make(chan []byte),
 
 		message: &message{},
 

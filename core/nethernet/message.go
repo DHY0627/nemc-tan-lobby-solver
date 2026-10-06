@@ -44,3 +44,25 @@ func (c *Conn) handleMessage(b []byte) error {
 	c.message.data = nil
 	return nil
 }
+
+// handleUnreliableMessage handles a message received from the 'UnreliableDataChannel'
+// using the same segment framing as the reliable channel.
+func (c *Conn) handleUnreliableMessage(b []byte) error {
+	msg, err := parseMessage(b)
+	if err != nil {
+		return fmt.Errorf("parse: %w", err)
+	}
+
+	if c.unreliableMessage == nil {
+		c.unreliableMessage = &message{}
+	}
+	c.unreliableMessage.segments = msg.segments
+	c.unreliableMessage.data = append(c.unreliableMessage.data, msg.data...)
+	if c.unreliableMessage.segments > 0 {
+		return nil
+	}
+
+	c.unreliablePackets <- c.unreliableMessage.data
+	c.unreliableMessage.data = nil
+	return nil
+}

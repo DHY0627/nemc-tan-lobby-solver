@@ -194,6 +194,7 @@ func (l listenerNotifier) NotifyError(err error) {
 // and transforms into remote description for later use in negotiation. An answer will be created from local parameters of
 // each transport and signaled back to the remote connection referenced in the offer.
 func (l *Listener) handleOffer(signal *Signal) error {
+	l.conf.Log.Info("handleOffer: raw signal data", slog.String("data", signal.Data))
 	d := &sdp.SessionDescription{}
 	if err := d.UnmarshalString(signal.Data); err != nil {
 		return wrapSignalError(fmt.Errorf("decode offer: %w", err), ErrorCodeFailedToSetRemoteDescription)
@@ -202,6 +203,11 @@ func (l *Listener) handleOffer(signal *Signal) error {
 	if err != nil {
 		return wrapSignalError(fmt.Errorf("parse offer: %w", err), ErrorCodeFailedToSetRemoteDescription)
 	}
+	l.conf.Log.Info("handleOffer: parsed description",
+		slog.String("iceUfrag", desc.ice.UsernameFragment),
+		slog.Any("dtlsFingerprints", desc.dtls.Fingerprints),
+		slog.Any("sctpCapabilities", desc.sctp),
+	)
 
 	var (
 		ctx    context.Context
@@ -406,11 +412,14 @@ func (l *Listener) startTransports(ctx context.Context, conn *Conn, d *descripti
 	}
 
 	conn.log.Debug("starting DTLS transport as server")
+	// DTLSTransport.Start 内部是阻塞握手（dtls.Server + Handshake），
+	// 返回成功即表示 DTLS 握手完成。SCTP 在其上建立。
 	if err := withContext(ctx, func() error {
 		return conn.dtls.Start(d.dtls)
 	}); err != nil {
 		return fmt.Errorf("start DTLS: %w", err)
 	}
+	conn.log.Info("DTLS handshake completed successfully")
 
 	conn.log.Debug("starting SCTP transport")
 	opened := make(chan struct{}, 1)
@@ -423,6 +432,11 @@ func (l *Listener) startTransports(ctx context.Context, conn *Conn, d *descripti
 		default:
 			return
 		}
+		// Bind the message handlers right now: the channel starts being read as soon as it is
+		// opened, and the remote may send a Bedrock packet in the same batch as the open
+		// handshake. Waiting for the other channel (and for the Conn to be handed over to the
+		// caller) would drop that packet.
+		conn.bindChannelHandlers(channel)
 		if conn.reliable != nil && conn.unreliable != nil {
 			close(opened)
 		}

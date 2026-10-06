@@ -3,7 +3,7 @@ package packet
 const (
 	IDTanLoginRequest uint16 = iota
 	IDTanCreateRoomRequest
-	_
+	IDTanStartGameRequest
 	IDTanEnterRoomRequest
 	_
 	IDTanLeaveRoomRequest

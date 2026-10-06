@@ -1,0 +1,26 @@
+# 构建产物
+*.exe
+*.dll
+*.so
+*.dylib
+/bin/
+/dist/
+/out/
+nemc-tan-lobby-solver
+nemc-tan-lobby-solver.exe
+
+# 运行/调试输出
+*.log
+*.tmp
+*.out
+*.test
+coverage.txt
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
